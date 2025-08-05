@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+import tkinter as tk
+from tkinter import messagebox
+
+class PasswordDialog:
+    def __init__(self, config_manager, title="密码验证", message="请输入管理员密码："):
+        self.config_manager = config_manager
+        self.title = title
+        self.message = message
+        self.result = False
+        self.root = None
+        
+    def show(self):
+        """显示密码对话框"""
+        self.root = tk.Toplevel()
+        self.root.title(self.title)
+        self.root.geometry("300x150")
+        self.root.resizable(False, False)
+        
+        # 设置窗口始终在最前面
+        self.root.attributes('-topmost', True)
+        self.root.grab_set()
+        
+        # 居中显示
+        self.root.update_idletasks()
+        x = (self.root.winfo_screenwidth() // 2) - (300 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (150 // 2)
+        self.root.geometry(f"300x150+{x}+{y}")
+        
+        # 创建界面
+        self.create_widgets()
+        
+        # 等待用户输入
+        self.root.wait_window()
+        
+        return self.result
+    
+    def create_widgets(self):
+        """创建界面元素"""
+        # 消息标签
+        message_label = tk.Label(self.root, text=self.message, font=("Arial", 10))
+        message_label.pack(pady=20)
+        
+        # 密码输入框
+        self.password_var = tk.StringVar()
+        password_entry = tk.Entry(
+            self.root, 
+            textvariable=self.password_var,
+            show="*",
+            font=("Arial", 12),
+            width=20
+        )
+        password_entry.pack(pady=10)
+        password_entry.focus_set()
+        
+        # 绑定回车键
+        password_entry.bind('<Return>', self.verify_password)
+        
+        # 按钮框架
+        button_frame = tk.Frame(self.root)
+        button_frame.pack(pady=20)
+        
+        # 确定按钮
+        ok_button = tk.Button(
+            button_frame,
+            text="确定",
+            command=self.verify_password,
+            font=("Arial", 10),
+            width=8
+        )
+        ok_button.pack(side=tk.LEFT, padx=10)
+        
+        # 取消按钮
+        cancel_button = tk.Button(
+            button_frame,
+            text="取消",
+            command=self.cancel,
+            font=("Arial", 10),
+            width=8
+        )
+        cancel_button.pack(side=tk.LEFT, padx=10)
+        
+        # 处理窗口关闭事件
+        self.root.protocol("WM_DELETE_WINDOW", self.cancel)
+    
+    def verify_password(self, event=None):
+        """验证密码"""
+        password = self.password_var.get()
+        
+        if not password:
+            messagebox.showerror("错误", "请输入密码！")
+            return
+        
+        if self.config_manager.verify_password(password):
+            self.result = True
+            self.root.destroy()
+        else:
+            messagebox.showerror("错误", "密码错误！")
+            self.password_var.set("")
+    
+    def cancel(self):
+        """取消"""
+        self.result = False
+        self.root.destroy()
+
+def show_password_dialog(config_manager, title="密码验证", message="请输入管理员密码："):
+    """显示密码对话框的便捷函数"""
+    dialog = PasswordDialog(config_manager, title, message)
+    return dialog.show()
