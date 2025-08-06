@@ -246,7 +246,7 @@ class ParentControlPanel:
         self.work_duration_var = tk.StringVar(value=str(self.config_manager.config['work_duration']))
         work_spinbox = tk.Spinbox(
             work_frame,
-            from_=5,
+            from_=1,
             to=120,
             textvariable=self.work_duration_var,
             font=('Microsoft YaHei', 12),
@@ -310,7 +310,7 @@ class ParentControlPanel:
             work_duration = int(self.work_duration_var.get())
             break_duration = int(self.break_duration_var.get())
             
-            if work_duration < 5 or work_duration > 120:
+            if work_duration < 1 or work_duration > 120:
                 messagebox.showerror("错误", "工作时长必须在5-120分钟之间")
                 return
             

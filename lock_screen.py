@@ -3,14 +3,18 @@ from tkinter import ttk
 import random
 import time
 import threading
+from password_dialog import show_password_dialog
 
 class LockScreen:
-    def __init__(self, break_duration_seconds, on_break_end=None):
+    def __init__(self, break_duration_seconds, config_manager, on_break_end=None, on_early_exit=None):
         self.break_duration = break_duration_seconds
         self.remaining_time = break_duration_seconds
+        self.config_manager = config_manager
         self.on_break_end = on_break_end
+        self.on_early_exit = on_early_exit  # 提前退出回调
         self.is_locked = True
         self.root = None
+        self.password_dialog_open = False
         
     def create_window(self):
         """创建锁屏窗口"""
@@ -46,15 +50,56 @@ class LockScreen:
         self.root.bind('<Control-Alt-Delete>', self.do_nothing)
         self.root.bind('<Control-c>', self.do_nothing)
         self.root.bind('<Control-v>', self.do_nothing)
-        self.root.bind('<Escape>', self.do_nothing)
         
-        # 捕获所有键盘输入
-        self.root.bind('<Key>', self.do_nothing)
+        # 特殊处理ESC键 - 弹出密码验证
+        self.root.bind('<Escape>', self.handle_escape_key)
+        
+        # 捕获其他所有键盘输入
+        self.root.bind('<Key>', self.handle_other_keys)
         
         return self.root
         
     def do_nothing(self, event=None):
         """阻止窗口关闭"""
+        return "break"
+    
+    def handle_escape_key(self, event=None):
+        """处理ESC键 - 显示密码验证"""
+        if self.password_dialog_open:
+            return "break"
+        
+        self.password_dialog_open = True
+        
+        def verify_password():
+            try:
+                # 创建密码验证对话框
+                result = show_password_dialog(
+                    self.config_manager,
+                    "提前结束休息",
+                    "输入管理员密码以提前结束休息："
+                )
+                
+                if result:
+                    print("密码验证成功，提前结束休息")
+                    # 调用提前退出回调
+                    if self.on_early_exit:
+                        self.on_early_exit()
+                    # 解锁屏幕
+                    self.unlock_screen()
+                else:
+                    print("密码验证失败或取消")
+                    
+            except Exception as e:
+                print(f"密码验证过程出错: {e}")
+            finally:
+                self.password_dialog_open = False
+        
+        # 在单独线程中处理密码验证，避免阻塞UI
+        threading.Thread(target=verify_password, daemon=True).start()
+        return "break"
+    
+    def handle_other_keys(self, event=None):
+        """处理其他键盘输入 - 阻止所有操作"""
         return "break"
     
     def setup_ui(self):

@@ -53,6 +53,7 @@ Thumbs.db
 # Project specific
 trash/
 versions/
+ScreenGuardian_Release_Windows/
 *.lock
 *.exe
 build_exe.py

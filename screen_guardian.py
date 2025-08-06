@@ -5,14 +5,23 @@ import threading
 import time
 import sys
 import os
+import signal
+import atexit
 
 from config_manager import ConfigManager
 from parent_control import ParentControlPanel
 from lock_screen import LockScreen
 from tray_icon import TrayIcon
+from process_protection import ProcessProtection
 
 class ScreenGuardian:
     def __init__(self):
+        # 首先检查多实例运行（必须在最开头）
+        self.check_single_instance()
+        
+        # 设置进程保护
+        self._setup_process_protection()
+        
         # 初始化配置管理器
         self.config_manager = ConfigManager()
         
@@ -28,12 +37,80 @@ class ScreenGuardian:
         self.tray_icon = None
         self.lock_screen = None
         
+        # 进程保护
+        self.process_protection = ProcessProtection(self)
+        
         # 主循环控制
         self.running = True
         self.timer_thread = None
+    
+    def _setup_process_protection(self):
+        """设置进程保护"""
+        try:
+            # 注册退出处理函数
+            atexit.register(self._cleanup_on_exit)
+            
+            # 捕获终止信号
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
+            
+            # 在Windows上尝试捕获更多信号
+            if sys.platform == "win32":
+                try:
+                    signal.signal(signal.SIGBREAK, self._signal_handler)
+                except AttributeError:
+                    pass  # SIGBREAK在某些Windows版本中可能不可用
+            
+            # 启动进程监控线程
+            self._start_process_monitor()
+            
+        except Exception as e:
+            print(f"设置进程保护失败: {e}")
+    
+    def _signal_handler(self, signum, frame):
+        """信号处理函数"""
+        print(f"收到信号 {signum}，尝试保护进程...")
         
-        # 防止多实例运行
-        self.check_single_instance()
+        # 使用进程保护模块处理终止请求
+        if self.process_protection.handle_termination_request():
+            self.quit_application()
+        else:
+            print("终止请求被拒绝")
+    
+    def _start_process_monitor(self):
+        """启动进程监控"""
+        def monitor():
+            import psutil
+            current_pid = os.getpid()
+            
+            while self.running:
+                try:
+                    # 检查进程是否还存在
+                    if not psutil.pid_exists(current_pid):
+                        break
+                    
+                    # 检查父进程状态
+                    current_proc = psutil.Process(current_pid)
+                    if not current_proc.is_running():
+                        break
+                    
+                    time.sleep(5)  # 每5秒检查一次
+                    
+                except Exception as e:
+                    print(f"进程监控异常: {e}")
+                    time.sleep(10)
+        
+        monitor_thread = threading.Thread(target=monitor, daemon=True)
+        monitor_thread.start()
+    
+    def _cleanup_on_exit(self):
+        """退出时的清理函数"""
+        try:
+            # 清理锁文件
+            if hasattr(self, 'lock_file') and os.path.exists(self.lock_file):
+                os.remove(self.lock_file)
+        except:
+            pass
         
     def check_single_instance(self):
         """检查是否已有实例在运行"""
@@ -125,6 +202,9 @@ class ScreenGuardian:
         """启动应用程序"""
         print("ScreenGuardian 启动中...")
         
+        # 启动进程保护
+        self.process_protection.start_protection()
+        
         # 如果是首次运行，显示设置界面
         if self.config_manager.is_first_run():
             print("首次运行，显示设置界面...")
@@ -143,7 +223,8 @@ class ScreenGuardian:
                 time.sleep(1)
         except KeyboardInterrupt:
             print("检测到键盘中断...")
-            self.quit_application()
+            if self.process_protection.handle_termination_request():
+                self.quit_application()
         except Exception as e:
             print(f"主循环异常: {e}")
             self.quit_application()
@@ -153,24 +234,31 @@ class ScreenGuardian:
         """启动监控"""
         if self.timer_thread and self.timer_thread.is_alive():
             return
-            
-        self.timer_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
-        self.timer_thread.start()
-        print("监控已启动")
+        
+        try:
+            self.timer_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+            self.timer_thread.start()
+            print("监控已启动")
+        except Exception as e:
+            print(f"启动监控失败: {e}")
     
     def _monitoring_loop(self):
         """监控循环"""
         while self.running:
-            if not self.monitoring_active:
+            try:
+                if not self.monitoring_active:
+                    time.sleep(1)
+                    continue
+                    
+                if self.current_state == 'working':
+                    self._handle_working_state()
+                elif self.current_state == 'resting':
+                    self._handle_resting_state()
+                    
                 time.sleep(1)
-                continue
-                
-            if self.current_state == 'working':
-                self._handle_working_state()
-            elif self.current_state == 'resting':
-                self._handle_resting_state()
-                
-            time.sleep(1)
+            except Exception as e:
+                print(f"监控循环异常: {e}")
+                time.sleep(5)  # 异常后等待5秒再继续
     
     def _handle_working_state(self):
         """处理工作状态"""
@@ -204,7 +292,12 @@ class ScreenGuardian:
             self.tray_icon.update_icon('resting')
         
         # 在单独线程中显示锁屏，避免阻塞主监控循环
-        threading.Thread(target=self._show_lock_screen, daemon=True).start()
+        try:
+            lock_thread = threading.Thread(target=self._show_lock_screen, daemon=True)
+            lock_thread.start()
+        except Exception as e:
+            print(f"启动锁屏线程失败: {e}")
+            self._fallback_break_timer()
     
     def _show_lock_screen(self):
         """显示锁屏"""
@@ -214,7 +307,9 @@ class ScreenGuardian:
             # 创建锁屏实例
             self.lock_screen = LockScreen(
                 self.remaining_break_time,
-                on_break_end=self._on_break_end_callback
+                self.config_manager,
+                on_break_end=self._on_break_end_callback,
+                on_early_exit=self._on_early_exit_callback
             )
             
             # 显示锁屏（会阻塞直到休息结束）
@@ -244,6 +339,11 @@ class ScreenGuardian:
         print("休息时间结束")
         self._end_break()
     
+    def _on_early_exit_callback(self):
+        """提前退出休息回调"""
+        print("用户提前结束休息")
+        self._end_break()
+    
     def _end_break(self):
         """结束休息"""
         self.current_state = 'working'
@@ -267,8 +367,11 @@ class ScreenGuardian:
                 print(f"显示设置界面失败: {e}")
         
         # 在单独线程中显示设置界面
-        settings_thread = threading.Thread(target=show_in_thread, daemon=True)
-        settings_thread.start()
+        try:
+            settings_thread = threading.Thread(target=show_in_thread, daemon=True)
+            settings_thread.start()
+        except Exception as e:
+            print(f"启动设置界面线程失败: {e}")
     
     def get_status_info(self):
         """获取状态信息"""
@@ -285,16 +388,37 @@ class ScreenGuardian:
     
     def toggle_monitoring(self):
         """切换监控状态"""
+        old_state = self.monitoring_active
         self.monitoring_active = not self.monitoring_active
         status = "恢复" if self.monitoring_active else "暂停"
         print(f"监控已{status}")
         
+        # 如果从暂停恢复到监控状态，重置时间
+        if not old_state and self.monitoring_active:
+            if self.current_state == 'working':
+                self.remaining_work_time = self.config_manager.get_work_duration()
+                self.work_start_time = time.time()
+            elif self.current_state == 'resting':
+                # 如果在休息状态恢复监控，强制结束休息
+                self._end_break()
+        
         # 更新托盘图标
         if self.tray_icon:
-            if self.monitoring_active:
-                self.tray_icon.update_icon('working' if self.current_state == 'working' else 'resting')
-            else:
-                self.tray_icon.update_icon('orange')
+            try:
+                if self.monitoring_active:
+                    self.tray_icon.update_icon('working' if self.current_state == 'working' else 'resting')
+                else:
+                    self.tray_icon.update_icon('orange')
+                    
+                # 延迟更新菜单以避免线程冲突
+                def delayed_menu_update():
+                    time.sleep(0.1)
+                    self.tray_icon.update_menu()
+                
+                threading.Thread(target=delayed_menu_update, daemon=True).start()
+                
+            except Exception as e:
+                print(f"更新托盘图标失败: {e}")
             # 更新菜单文本
             self.tray_icon.update_menu()
     
@@ -302,6 +426,10 @@ class ScreenGuardian:
         """退出应用程序"""
         print("正在退出 ScreenGuardian...")
         self.running = False
+        
+        # 停止进程保护
+        if hasattr(self, 'process_protection'):
+            self.process_protection.stop_protection()
         
         # 停止托盘图标
         if self.tray_icon:

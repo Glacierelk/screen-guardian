@@ -14,21 +14,32 @@ class PasswordDialog:
         """显示密码对话框"""
         self.root = tk.Toplevel()
         self.root.title(self.title)
-        self.root.geometry("300x150")
+        self.root.geometry("350x180")
         self.root.resizable(False, False)
         
         # 设置窗口始终在最前面
         self.root.attributes('-topmost', True)
         self.root.grab_set()
         
+        # 设置窗口图标和样式
+        try:
+            # 隐藏窗口直到完全设置好
+            self.root.withdraw()
+        except:
+            pass
+        
         # 居中显示
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (300 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (150 // 2)
-        self.root.geometry(f"300x150+{x}+{y}")
+        x = (self.root.winfo_screenwidth() // 2) - (350 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (180 // 2)
+        self.root.geometry(f"350x180+{x}+{y}")
         
         # 创建界面
         self.create_widgets()
+        
+        # 显示窗口
+        self.root.deiconify()
+        self.root.focus_force()
         
         # 等待用户输入
         self.root.wait_window()
@@ -37,18 +48,31 @@ class PasswordDialog:
     
     def create_widgets(self):
         """创建界面元素"""
+        # 主容器
+        main_frame = tk.Frame(self.root, bg='#f0f0f0')
+        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
+        
         # 消息标签
-        message_label = tk.Label(self.root, text=self.message, font=("Arial", 10))
-        message_label.pack(pady=20)
+        message_label = tk.Label(
+            main_frame, 
+            text=self.message, 
+            font=("Microsoft YaHei", 11),
+            bg='#f0f0f0',
+            wraplength=300,
+            justify='center'
+        )
+        message_label.pack(pady=(0, 15))
         
         # 密码输入框
         self.password_var = tk.StringVar()
         password_entry = tk.Entry(
-            self.root, 
+            main_frame, 
             textvariable=self.password_var,
             show="*",
-            font=("Arial", 12),
-            width=20
+            font=("Microsoft YaHei", 12),
+            width=25,
+            relief='solid',
+            bd=1
         )
         password_entry.pack(pady=10)
         password_entry.focus_set()
@@ -57,16 +81,20 @@ class PasswordDialog:
         password_entry.bind('<Return>', self.verify_password)
         
         # 按钮框架
-        button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=20)
+        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
+        button_frame.pack(pady=15)
         
         # 确定按钮
         ok_button = tk.Button(
             button_frame,
             text="确定",
             command=self.verify_password,
-            font=("Arial", 10),
-            width=8
+            font=("Microsoft YaHei", 10),
+            width=10,
+            bg='#4CAF50',
+            fg='white',
+            relief='flat',
+            cursor='hand2'
         )
         ok_button.pack(side=tk.LEFT, padx=10)
         
@@ -75,8 +103,12 @@ class PasswordDialog:
             button_frame,
             text="取消",
             command=self.cancel,
-            font=("Arial", 10),
-            width=8
+            font=("Microsoft YaHei", 10),
+            width=10,
+            bg='#f44336',
+            fg='white',
+            relief='flat',
+            cursor='hand2'
         )
         cancel_button.pack(side=tk.LEFT, padx=10)
         

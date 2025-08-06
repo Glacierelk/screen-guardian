@@ -2,6 +2,8 @@ import pystray
 from PIL import Image, ImageDraw
 import threading
 import time
+import tkinter as tk
+from tkinter import messagebox
 from password_dialog import show_password_dialog
 
 class TrayIcon:
@@ -61,27 +63,36 @@ class TrayIcon:
     
     def create_menu(self):
         """创建右键菜单"""
-        return pystray.Menu(
-            pystray.MenuItem(
-                "设置",
-                self.show_settings,
-                default=True
-            ),
-            pystray.MenuItem(
-                "状态信息",
-                self.show_status
-            ),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                "暂停监控" if self.screen_guardian.monitoring_active else "恢复监控",
-                self.toggle_monitoring_with_password
-            ),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(
-                "退出",
-                self.quit_application_with_password
+        try:
+            monitoring_text = "暂停监控" if self.screen_guardian.monitoring_active else "恢复监控"
+            
+            return pystray.Menu(
+                pystray.MenuItem(
+                    "设置",
+                    self.show_settings,
+                    default=True
+                ),
+                pystray.MenuItem(
+                    "状态信息",
+                    self.show_status
+                ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    monitoring_text,
+                    self.toggle_monitoring_with_password
+                ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    "退出",
+                    self.quit_application_with_password
+                )
             )
-        )
+        except Exception as e:
+            print(f"创建菜单失败: {e}")
+            # 返回一个基本菜单
+            return pystray.Menu(
+                pystray.MenuItem("退出", self.quit_application_with_password)
+            )
     
     def show_settings(self, icon=None, item=None):
         """显示设置界面"""
@@ -89,23 +100,75 @@ class TrayIcon:
     
     def show_status(self, icon=None, item=None):
         """显示状态信息"""
-        status = self.screen_guardian.get_status_info()
-        # 这里可以实现一个简单的状态显示窗口
-        print(f"当前状态: {status}")
+        def display_status():
+            try:
+                # 添加延迟确保托盘菜单完全关闭
+                time.sleep(0.1)
+                
+                # 获取状态信息
+                status = self.screen_guardian.get_status_info()
+                monitoring_status = "启用" if self.screen_guardian.monitoring_active else "暂停"
+                current_state = "工作中" if self.screen_guardian.current_state == 'working' else "休息中"
+                
+                # 获取配置信息
+                config = self.screen_guardian.config_manager
+                work_duration = config.get_work_duration()
+                break_duration = config.get_break_duration()
+                
+                # 格式化工作和休息时长
+                work_minutes = work_duration // 60
+                break_minutes = break_duration // 60
+                
+                # 使用简单的消息框显示状态信息
+                status_message = f"""ScreenGuardian 状态信息
+
+监控状态: {monitoring_status}
+当前状态: {current_state}
+详细信息: {status}
+工作时长: {work_minutes} 分钟
+休息时长: {break_minutes} 分钟
+
+提示: 右键托盘图标可以访问更多功能"""
+                
+                messagebox.showinfo("ScreenGuardian 状态信息", status_message)
+                
+            except Exception as e:
+                print(f"显示状态信息失败: {e}")
+                # 如果获取状态失败，使用简单的消息框
+                try:
+                    status = self.screen_guardian.get_status_info()
+                    monitoring_status = "启用" if self.screen_guardian.monitoring_active else "暂停"
+                    messagebox.showinfo("状态信息", 
+                                      f"监控状态: {monitoring_status}\n当前状态: {status}")
+                except:
+                    messagebox.showinfo("状态信息", "无法获取状态信息")
+        
+        # 在单独线程中显示状态窗口
+        threading.Thread(target=display_status, daemon=True).start()
     
     def toggle_monitoring_with_password(self, icon=None, item=None):
         """切换监控状态（需要密码验证）"""
         def verify_and_toggle():
             try:
+                # 添加延迟确保托盘菜单完全关闭
+                time.sleep(0.1)
+                
                 # 显示密码验证对话框
                 if show_password_dialog(
                     self.screen_guardian.config_manager,
                     "密码验证",
-                    "暂停/恢复监控需要管理员权限，请输入密码："
+                    "暂停/恢复监控需要管理员权限："
                 ):
+                    # 切换监控状态
                     self.screen_guardian.toggle_monitoring()
-                    # 更新菜单文本
-                    self.update_menu()
+                    
+                    # 延迟更新菜单，避免线程冲突
+                    def delayed_update():
+                        time.sleep(0.2)
+                        self.update_menu()
+                    
+                    threading.Thread(target=delayed_update, daemon=True).start()
+                    
             except Exception as e:
                 print(f"密码验证失败: {e}")
         
@@ -116,14 +179,23 @@ class TrayIcon:
         """退出应用程序（需要密码验证）"""
         def verify_and_quit():
             try:
+                # 添加延迟确保托盘菜单完全关闭
+                time.sleep(0.1)
+                
                 # 显示密码验证对话框
                 if show_password_dialog(
                     self.screen_guardian.config_manager,
                     "密码验证",
                     "退出程序需要管理员权限，请输入密码："
                 ):
-                    self.screen_guardian.quit_application()
-                    self.stop()
+                    # 延迟执行退出，确保对话框完全关闭
+                    def delayed_quit():
+                        time.sleep(0.2)
+                        self.screen_guardian.quit_application()
+                        self.stop()
+                    
+                    threading.Thread(target=delayed_quit, daemon=True).start()
+                    
             except Exception as e:
                 print(f"密码验证失败: {e}")
         
@@ -132,8 +204,12 @@ class TrayIcon:
     
     def update_menu(self):
         """更新菜单"""
-        if self.icon:
-            self.icon.menu = self.create_menu()
+        try:
+            if self.icon and self.running:
+                new_menu = self.create_menu()
+                self.icon.menu = new_menu
+        except Exception as e:
+            print(f"更新菜单失败: {e}")
     
     def toggle_monitoring(self, icon=None, item=None):
         """切换监控状态（保留原方法，用于内部调用）"""
