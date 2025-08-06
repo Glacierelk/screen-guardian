@@ -61,3 +61,24 @@ ScreenGuardian.spec
 
 # Config files with sensitive data
 screen_guardian_config.json
+*.config
+config.json
+
+# Local environment and secrets
+.env
+.env.local
+.env.production
+.env.staging
+secrets.json
+credentials.json
+
+# Log files that might contain sensitive data
+*.log
+logs/
+debug.log
+
+# Temporary and cache files
+temp/
+cache/
+.cache/
+SECURITY.md
